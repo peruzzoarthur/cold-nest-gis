@@ -6,23 +6,23 @@ import {
   Body,
 } from '@nestjs/common';
 import { ShapesService } from './shapes.service';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { FeatureCollection } from 'geojson';
+import { UploadGeoJSONDto } from './dto/upload-geojson-dto';
 
 @Controller('shapes')
 export class ShapesController {
   constructor(private readonly shapesService: ShapesService) { }
 
 @Post('upload')
-  async uploadGeoJSON(@Body() geoJSON: FeatureCollection) {
+  async uploadGeoJSON(@Body() uploadGeoJSONDto: UploadGeoJSONDto) {
     // Validate GeoJSON type (already checked by TypeScript)
-    if (geoJSON.type !== 'FeatureCollection') {
+    if (uploadGeoJSONDto.geoJSON.type !== 'FeatureCollection') {
       throw new Error('Invalid GeoJSON: Must be a FeatureCollection.');
     }
 
-    await this.shapesService.processGeoJSON(geoJSON);
+    await this.shapesService.processGeoJSON(uploadGeoJSONDto.geoJSON, uploadGeoJSONDto.crs);
     return { message: 'GeoJSON uploaded and processed successfully' };
   }
+
   @Get()
   async getAllShapes() {
     return await this.shapesService.findAll();

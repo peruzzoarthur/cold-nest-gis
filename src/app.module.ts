@@ -1,32 +1,34 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Shape } from './shapes/entities/shape.entity';  // Adjust path as needed
-import { AppService } from './app.service';
-import { AppController } from './app.controller';
+import { AppDataSource } from './data-source'; // Import your DataSource
 import { ShapesModule } from './shapes/shapes.module';
+import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true,  // Make variables accessible globally
+      isGlobal: true, // Make .env variables globally available
     }),
     TypeOrmModule.forRootAsync({
-      useFactory: () => ({
-        type: 'postgres',
-        host: process.env.POSTGRES_HOST,
-        port: parseInt(process.env.POSTGRES_PORT, 10),
-        username: process.env.POSTGRES_USERNAME,
-        password: process.env.POSTGRES_PASSWORD,
-        database: process.env.POSTGRES_DATABASE,
-        entities: [Shape],
-        synchronize: true, // Set this to false in production
-      }),
+      useFactory: () => {
+        const dataSourceOptions = AppDataSource.options as PostgresConnectionOptions;
+        return {
+          type: dataSourceOptions.type,
+          host: dataSourceOptions.host,
+          port: dataSourceOptions.port,
+          username: dataSourceOptions.username,
+          password: dataSourceOptions.password,
+          database: dataSourceOptions.database,
+          entities: dataSourceOptions.entities,
+          synchronize: true, // Disable synchronize to use migrations
+        };
+      },
     }),
-    ShapesModule
+    ShapesModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}
 

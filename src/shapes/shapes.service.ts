@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Shape } from './entities/shape.entity';
@@ -14,22 +14,28 @@ export class ShapesService {
   async findAll(): Promise<Shape[]> {
     return await this.shapesRepository.find();
   }
-  async processGeoJSON(geoJSON: FeatureCollection): Promise<void> {
-    const features = geoJSON.features;
 
-    for (const feature of features) {
-      const geometry: Geometry = feature.geometry; // GeoJSON geometry
-      const properties = feature.properties || {}; // Optional properties
+  async processGeoJSON(geoJSON: FeatureCollection, srid: number = 3857): Promise<void> {
 
-      await this.shapesRepository.query(
-        `
-        INSERT INTO shapes (geometry, properties)
-        VALUES (ST_GeomFromGeoJSON($1), $2::jsonb)
-        `,
-        [JSON.stringify(geometry), JSON.stringify(properties)],
-      );
+  if (srid !== 3857) {
+      throw new HttpException("SRID must be EPSG:3857", HttpStatus.BAD_REQUEST)
     }
+  const features = geoJSON.features;
+
+  for (const feature of features) {
+    const geometry: Geometry = feature.geometry; // GeoJSON geometry
+    const properties = feature.properties || {}; // Optional properties
+
+    await this.shapesRepository.query(
+      `
+      INSERT INTO shapes (geometry, properties)
+      VALUES (ST_SetSRID(ST_GeomFromGeoJSON($1), $2), $3::jsonb)
+      `,
+      [JSON.stringify(geometry), srid, JSON.stringify(properties)],
+    );
   }
+}
+
 
 async findWithinBBox(bbox: string): Promise<GeoJSON.FeatureCollection> {
   const bboxCoords = bbox.split(',').map(Number);
@@ -37,7 +43,7 @@ async findWithinBBox(bbox: string): Promise<GeoJSON.FeatureCollection> {
   // Query to select shapes within the bounding box and convert geometry to GeoJSON
   const result = await this.shapesRepository.query(
     `SELECT 
-        ST_AsGeoJSON(geometry) AS geometry, 
+        ST_AsGeoJSON(geometry, 1, 2) AS geometry, 
         properties 
       FROM shapes 
       WHERE ST_Within(geometry, ST_MakeEnvelope($1, $2, $3, $4, 4326))`,

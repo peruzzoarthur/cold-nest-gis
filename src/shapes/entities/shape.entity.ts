@@ -5,7 +5,7 @@ export class Shape {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'Geometry', srid: 4326 })
+  @Column({ type: 'geometry', spatialFeatureType: 'Geometry', srid: 3857 })
   geometry: string;
 
   @Column('jsonb', { nullable: true })
