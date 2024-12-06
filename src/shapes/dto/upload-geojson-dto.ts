@@ -7,5 +7,5 @@ export class UploadGeoJSONDto {
 
   @IsOptional()
   @IsNumber()
-  crs?: number; // CRS is optional
+  srid?: number; // CRS is optional
 }

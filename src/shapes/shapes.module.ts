@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { ShapesService } from './shapes.service';
 import { ShapesController } from './shapes.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Shape } from './entities/shape.entity';
+import { FeatureCollectionEntity } from './entities/feature-collection.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Shape])],
+  imports: [TypeOrmModule.forFeature([FeatureCollectionEntity])],
   controllers: [ShapesController],
   providers: [ShapesService],
 })

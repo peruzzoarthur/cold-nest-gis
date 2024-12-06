@@ -1,66 +1,119 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import {  Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Shape } from './entities/shape.entity';
-import { FeatureCollection, Geometry } from 'geojson';
+import { FeatureCollectionEntity } from './entities/feature-collection.entity';
+import { Feature, FeatureCollection, Geometry } from 'geojson';
 
 @Injectable()
 export class ShapesService {
   constructor(
-    @InjectRepository(Shape)
-    private shapesRepository: Repository<Shape>,
-  ) { }
+    @InjectRepository(FeatureCollectionEntity)
+    private featureCollectionRepository: Repository<FeatureCollectionEntity>,
+  ) {}
 
-  async findAll(): Promise<Shape[]> {
-    return await this.shapesRepository.find();
+  private srid = parseInt(process.env.PROJECT_SRID);
+
+  async findAll(): Promise<FeatureCollectionEntity[]> {
+    return await this.featureCollectionRepository.find();
   }
 
-  async processGeoJSON(geoJSON: FeatureCollection, srid: number = 3857): Promise<void> {
+  async delete(id: number): Promise<FeatureCollectionEntity> {
+    const collection = await this.featureCollectionRepository.findOneBy({ id });
 
-  if (srid !== 3857) {
-      throw new HttpException("SRID must be EPSG:3857", HttpStatus.BAD_REQUEST)
+    if (!collection) {
+      throw new HttpException(
+        'FeatureCollection with the given ID not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
-  const features = geoJSON.features;
 
-  for (const feature of features) {
-    const geometry: Geometry = feature.geometry; // GeoJSON geometry
-    const properties = feature.properties || {}; // Optional properties
+    return await this.featureCollectionRepository.remove(collection);
+  }
 
-    await this.shapesRepository.query(
+  async saveFeatureCollection(
+    geoJSON: FeatureCollection,
+    srid: number = this.srid,
+  ): Promise<FeatureCollectionEntity> {
+
+    // if (srid !== this.srid) {
+    //   throw new HttpException(
+    //     `SRID must be EPSG:${this.srid}`,
+    //     HttpStatus.BAD_REQUEST,
+    //   );
+    // }
+
+    const featureCollectionEntity = this.featureCollectionRepository.create({
+      geoJSON,
+      srid,
+    });
+
+    return await this.featureCollectionRepository.save(featureCollectionEntity);
+  }
+
+  async findWithinBBox(bbox: string): Promise<GeoJSON.FeatureCollection[]> {
+    const bboxCoords = bbox.split(',').map(Number);
+
+    const results = await this.featureCollectionRepository.query(
       `
-      INSERT INTO shapes (geometry, properties)
-      VALUES (ST_SetSRID(ST_GeomFromGeoJSON($1), $2), $3::jsonb)
+      SELECT id, geoJSON, srid 
+      FROM feature_collections 
+      WHERE ST_Intersects(
+        ST_SetSRID(ST_GeomFromGeoJSON(geoJSON::text), srid), 
+        ST_MakeEnvelope($1, $2, $3, $4, $5)
+      )
       `,
-      [JSON.stringify(geometry), srid, JSON.stringify(properties)],
+      [...bboxCoords, this.srid],
     );
+
+    // Map the results into GeoJSON FeatureCollections
+    return results.map((result: any) => ({
+      id: result.id,
+      geoJSON: result.geoJSON,
+    }));
+  }
+
+   async createBufferForGeoJSON(
+    geoJSON: FeatureCollection,
+    distance: number,
+    srid: number,
+  ): Promise<FeatureCollection> {
+    const bufferedFeatures: Feature[] = [];
+
+    // Loop through each feature in the FeatureCollection
+    for (const feature of geoJSON.features) {
+      const geometry: Geometry = feature.geometry;
+      const properties = feature.properties || {};
+
+      // Apply the ST_Buffer function to the geometry
+      const bufferedGeometry = await this.createBuffer(geometry, distance, srid);
+
+      // Create a new feature with the buffered geometry and the original properties
+      const bufferedFeature: Feature = {
+        type: 'Feature',
+        geometry: bufferedGeometry,
+        properties,
+      };
+
+      bufferedFeatures.push(bufferedFeature);
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features: bufferedFeatures,
+    };
+  }
+  private async createBuffer(geometry: Geometry, distance: number, srid: number): Promise<Geometry> {
+    const result = await this.featureCollectionRepository.query(
+      `
+      SELECT ST_AsGeoJSON(ST_Buffer(ST_SetSRID(ST_GeomFromGeoJSON($1), $2), $3)) AS geometry
+      `,
+      [JSON.stringify(geometry), srid, distance],
+    );
+
+    if (result && result.length > 0) {
+      return JSON.parse(result[0].geometry);
+    }
+    throw new Error('Buffer creation failed');
   }
 }
 
-
-async findWithinBBox(bbox: string): Promise<GeoJSON.FeatureCollection> {
-  const bboxCoords = bbox.split(',').map(Number);
-
-  // Query to select shapes within the bounding box and convert geometry to GeoJSON
-  const result = await this.shapesRepository.query(
-    `SELECT 
-        ST_AsGeoJSON(geometry, 1, 2) AS geometry, 
-        properties 
-      FROM shapes 
-      WHERE ST_Within(geometry, ST_MakeEnvelope($1, $2, $3, $4, 4326))`,
-    bboxCoords,
-  );
-
-  // Convert the result into a GeoJSON FeatureCollection
-  const geoJSON: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: result.map((row: any) => ({
-      type: "Feature",
-      geometry: JSON.parse(row.geometry), // Convert the GeoJSON string to an object
-      properties: row.properties,
-    })),
-  };
-
-  return geoJSON;
-}
- 
-}
